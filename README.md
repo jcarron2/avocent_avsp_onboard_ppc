@@ -1,10 +1,10 @@
 Hope this helps if you're running one of these old KVMs.
 
-Quick disclaimer since this was built with a lot of AI help: if you have a problem with AI-assisted code, you've got three choices — use it as-is, help improve it, or delete it and move on. I'm not a programmer, I'm a jack-of-all-trades with too many projects and three kids, so "good enough and working" is the bar here. Use this at your own risk — I have not gone through it line by line, and it touches KVM firmware, so treat it accordingly. I'll say "I" throughout, but most of the actual coding was Claude (Anthropic's AI) working at my direction. I'll keep adding features as time allows.
+Quick disclaimer since this was built with a lot of AI help: if you have a problem with AI-assisted code, you've got three choices — use it as-is, help improve it, or delete it and move on. I'm not a programmer, I'm a jack-of-all-trades with too many projects and three young kids, so "good enough and working excelent for me" is the bar here. Use this at your own risk — I have not gone through it line by line, and it touches KVM firmware, so treat it accordingly. Most of the actual coding was Claude working at my direction. I'll keep adding features as time allows.
 
 **Why**
 
-Flipping `java.security` and re-adding IP exceptions on every PC just to launch a KVM session got old fast. This replaces the Java Web Start client with a native on-device daemon (`avsp_client_ppc`) that just streams to a browser — no local software, no per-machine config.
+Flipping `java.security` and re-adding IP exceptions on every PC just to launch a KVM session got old fast. This replaces the Java Web Start client with a native on-device daemon (`avsp_client_ppc`) that just streams to a browser — no local software, no per-machine config, easily viewable on a mobile device (no OSK yet, but maybe in the future). 
 
 This is release-ppcbin: precompiled PowerPC binaries only, no source, no build toolchain. Smaller download, same features as the full source release — just can't rebuild `avsp_client_ppc` from here.
 
@@ -44,7 +44,7 @@ Runme.sh builds the bundle + `install.sh` for you, then offers to start a TFTP s
 From there you only need to run the on-device step below.
 Confirm you have a root shell on the KVM using either the modem serial port (**57600 8-N-1, hardware flow control (RTS/CTS)** -- this is NOT the SETUP port's 9600 baud, they're two different ports/UARTs on this device) or `conshell` enabled and started (only available once a first install is already running -- see above).
 
-```sh
+```
 cd /tmp
 tftp -g -r install.sh -l install.sh <your-pc-ip> 6969
 sh install.sh
