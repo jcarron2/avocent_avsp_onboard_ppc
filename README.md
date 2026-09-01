@@ -42,7 +42,7 @@ run `./runme.sh`, pick :
 Runme.sh builds the bundle + `install.sh` for you, then offers to start a TFTP server itself (`avsp_onboard/mini_tftpd.py`, vendored, no `tftpy`/system `tftpd` needed) — say yes and it prints the exact on-device command to run next and serves until you Ctrl+C to kill it. 
 
 From there you only need to run the on-device step below.
-Confirm you have a root shell on the KVM using either the modem serial port (**57600 8-N-1, hardware flow control (RTS/CTS)** -- this is NOT the SETUP port's 9600 baud, they're two different ports/UARTs on this device) or `conshell` enabled and started (only available once a first install is already running -- see above).
+Confirm you have a root shell on the KVM using either the modem serial port (**9600 8-N-1**, confirmed live/working) or `conshell` enabled and started (only available once a first install is already running -- see above).
 
 ```
 cd /tmp
