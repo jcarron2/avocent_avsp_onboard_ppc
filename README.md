@@ -1,7 +1,3 @@
-# avocent_avsp_onboard_ppc
-
-PPC companion daemon (`avsp_client_ppc`) replacing Avocent's Java KVM client on the DSR2030 (x030) IP KVM appliance. Runs natively on-device (PowerPC 405EP), streaming DVC15 video and HID input to any modern browser, no Java/Web Start needed. Includes a firmware customizer toolkit and a self-healing on-device watchdog.
-
 Hope this helps if you're running one of these old KVMs.
 
 Quick disclaimer since this was built with a lot of AI help: if you have a problem with AI-assisted code, you've got three choices — use it as-is, help improve it, or delete it and move on. I'm not a programmer, I'm a jack-of-all-trades with too many projects and three kids, so "good enough and working" is the bar here. Use this at your own risk — I have not gone through it line by line, and it touches KVM firmware, so treat it accordingly. I'll say "I" throughout, but most of the actual coding was Claude (Anthropic's AI) working at my direction. I'll keep adding features as time allows.
@@ -120,11 +116,11 @@ release-ppcbin/
 `runme.sh` checks Python/openssl/JDK, then a simple numbered menu: open a firmware file, build modified firmware, build the companion bundle, or re-run the dependency check. Every step shows the exact command before running it and asks you to confirm.
 
 
-## What's in `flash_bundle_envelope.bin`
+## What's in flash_bundle_envelope.bin ?
 
 Built by `deploy_bundle.py`'s `build_envelope()` in `avsp_onboard/deploy_bundle.py`, in two steps:
 
-**1. Tar up 5 files** (the `BUNDLE_FILES` list in the script -- a plain, uncompressed POSIX tar, not gzipped):
+Tar up 5 the files below 
 
 | File | What it is |
 |---|---|
@@ -134,8 +130,9 @@ Built by `deploy_bundle.py`'s `build_envelope()` in `avsp_onboard/deploy_bundle.
 | `watchdog.sh` | supervises the daemon, respawns it on any exit |
 | `mtd_erase_write_ppc` | so the daemon's own update-from-server feature can write a future staged bundle to flash without needing anything fetched from your PC again |
 
-**2. Wrap the tar in an 8-byte header**: 4 bytes of magic `"AVCB"` + a 4-byte big-endian length, then the tar bytes appended raw. For example, a 1,402,880-byte tar becomes `AVCB` + `\x00\x15\x68\x00` (= 1,402,880 in hex) + the tar → 1,402,884 bytes total.
+2. Wrap the tar in an 8-byte header**: 4 bytes of magic `"AVCB"` + a 4-byte big-endian length, then the tar bytes appended raw. 
+For example, a 1,402,880-byte tar becomes `AVCB` + `\x00\x15\x68\x00` (= 1,402,880 in hex) + the tar → 1,402,884 bytes total.
 
-**Why the magic bytes exist**: `mtd_erase_write_ppc` (on-device) reads the first bytes of the target flash region before ever erasing it -- if they're `AVCB`, it knows this is a previous install of our own bundle and it's safe to overwrite; if the region isn't that and isn't blank (`0xFF` throughout), it refuses unless you pass `--force` (so it can't accidentally stomp on something else living in that reserved flash region). `flash_bundle_read_ppc` (the reader, used every boot by `startup.sh`) auto-detects this current "v2" format (`[bytes 0-3: "AVCB" magic][bytes 4-7: length N]`) *and* a legacy bare-length "v1" format from before 2026-08-19 (no magic at all, first 4 bytes are just the length directly) -- the code to auto-detect that older format still exists so an old already-installed bundle keeps reading back fine; will remove it at a future date once nothing still in the field needs it.
+**Why the magic bytes exist**: `mtd_erase_write_ppc` (on-device) reads the first bytes of the target flash region before ever erasing it -- if they're `AVCB`, it knows this is a previous install of our own bundle and it's safe to overwrite; if the region isn't that and isn't blank (`0xFF` throughout), it refuses unless you pass `--force` (so it can't accidentally stomp on something else living in that reserved flash region). `flash_bundle_read_ppc` (the reader, used every boot by `startup.sh`) auto-detects this current "v2" format (`[bytes 0-3: "AVCB" magic][bytes 4-7: length N]`) and a previous format I will remove at a future date once nothing still in the field needs it.
 
 This file is generated fresh every single time you run `deploy_bundle.py` -- it never ships in the repo, and it doesn't depend on the device IP/target-port/etc at all (only `startup.sh`, generated alongside it, is per-device).
