@@ -1,6 +1,12 @@
 Hope this helps if you're running one of these old KVMs.
 
+This is a reverse-engineering project to create a native web browser server that runs on the PPC powered Avocent KVM X030 and possibly others, to work with modern browsers. The project successfully works on a few DSR 2030 I have, and runs natively, survives reboots, responds well, and does not conflict with the "main_app" or overwhelm the whopping 266 mhz PPC CPU on the KVM. The binary is complied as a native PPC binary, and there were numerious OS/app bugs/work arounds I needed to implement to have this run on the local device smoothly. I found a slice of space on the tsop flashchip which I used to store the binary file on the actual device, as well as a few utilities. Modifications were made to the existing OS image to make use of the existing "modem" db9 port as a rooted serial console ( something useful), and add other features. The video stream was reverse engineers as well as the control protocol, signalling and many other things to make this all work smoothly. The resultant binary file is ~1meg, and co-exists with the existing KVM software, and covers all of the use case I want. Initially I was using the KVM to re-encode the video, but the CPU doesn't have the horse power for that, so after some fiddling around I decided to use the remote end machines browser to decode that in JS, and it worked wonderfully. There are scalaing options, and some macros implemented as well. I'm sure this needs a lot more work, it is my first project and github post ever, so take it easy. I do intend to release the source code for the avsp_client_ppc when I am done fildding around and get the binary files embedded into the flash ( currently making some progress on that)). 
+
+
 Quick disclaimer since this was built with a lot of AI help: if you have a problem with AI-assisted code, you've got three choices — use it as-is, help improve it, or delete it and move on. I'm not a programmer, I'm a jack-of-all-trades with too many projects and three young kids, so "good enough and working excellent for me" is the bar here. Use this at your own risk — I have not gone through it line by line, and it touches KVM firmware, so treat it accordingly. Most of the actual coding was Claude working at my direction. I'll keep adding features as time allows.
+
+
+...If you're still reading — yeah, I had some fun making this of course. I enjoy these kind of projects, which I would never be able to finish without the leverage of CC / AI.
 
 **Why**
 
