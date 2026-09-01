@@ -76,7 +76,7 @@ No in-place removal. Reflash the original stock `.fl` to undo any firmware featu
 
 
 
-Further details of the features the tooling will customize 
+## Further details of the features the tooling will customize 
 
 ### `--modem-console`
 Real interactive root shell on the physical MODEM port (`/dev/ttyS1`). No network exposure by itself.
