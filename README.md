@@ -74,6 +74,8 @@ You should at this stage get a screen similar to the screenshots below:
 No in-place removal. Reflash the original stock `.fl` to undo any firmware feature. To remove just the companion daemon from flash (leave the firmware alone), run `avsp_onboard/uninstall.sh` from a root shell on the device.
 
 
+
+
 Further details of the features the tooling will customize 
 
 ### `--modem-console`
