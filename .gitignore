@@ -4,3 +4,4 @@ avsp_onboard/backup/
 avsp_onboard/deploy_out/
 *.fl
 *.fl.md5
+push_to_github.sh
