@@ -1,0 +1,33 @@
+#!/bin/sh
+# /mnt/jffs/startup.sh -- launched ~5s after boot by the auto_run hook
+# added by the "modem console" / base feature set (see release/README.md).
+# Lives on the writable JFFS2 partition, so this file can be edited or
+# replaced freely without ever re-flashing firmware.
+#
+# What it does: pulls the avsp-onboard bundle (avsp_client_ppc + its
+# kernel-patch helper + the watchdog) out of the reserved blank region of
+# mtd1 (see FLASH_LAYOUT.md), then hands off to watchdog.sh, which keeps
+# the live KVM session running and self-heals if any of these files
+# disappear from /tmp for any reason.
+#
+# Values below are filled in at deploy time by
+# release/avsp_onboard/deploy_bundle.py -- this file is a template, not
+# meant to be copied to the device with the {{...}} placeholders still in it.
+
+BUNDLE_OFFSET="{{BUNDLE_OFFSET}}"
+DSR_IP="{{DSR_IP}}"
+ADMIN_USER="{{ADMIN_USER}}"
+TARGET_PORT="{{TARGET_PORT}}"
+WS_PORT="{{WS_PORT}}"
+
+# Real ticket doesn't matter here: avsp_client_ppc's own main() logs in
+# and derives a fresh one on startup (see avsp_client.c's admin_login()
+# call in main()) -- this is only a fallback value for the rare case that
+# self-login itself fails, so any non-empty placeholder is fine.
+TICKET="PLACEHOLDER"
+
+/mnt/jffs/flash_bundle_read /dev/mtd1 "$BUNDLE_OFFSET" /tmp/flash_bundle.tar
+tar -xf /tmp/flash_bundle.tar -C /tmp
+chmod +x /tmp/avsp_client_ppc /tmp/kmem_patch /tmp/ensure_patched.sh /tmp/watchdog.sh 2>/dev/null
+
+sh /tmp/watchdog.sh "$DSR_IP" "$ADMIN_USER" "$TICKET" "$TARGET_PORT" "$WS_PORT" &

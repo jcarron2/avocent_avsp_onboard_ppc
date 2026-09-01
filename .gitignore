@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+avsp_onboard/backup/
+avsp_onboard/deploy_out/
+*.fl
+*.fl.md5
