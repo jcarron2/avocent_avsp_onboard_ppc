@@ -1,3 +1,7 @@
+# avocent_avsp_onboard_ppc
+
+PPC companion daemon (`avsp_client_ppc`) replacing Avocent's Java KVM client on the DSR2030 (x030) IP KVM appliance. Runs natively on-device (PowerPC 405EP), streaming DVC15 video and HID input to any modern browser, no Java/Web Start needed. Includes a firmware customizer toolkit and a self-healing on-device watchdog.
+
 Hope this helps if you're running one of these old KVMs.
 
 Quick disclaimer since this was built with a lot of AI help: if you have a problem with AI-assisted code, you've got three choices — use it as-is, help improve it, or delete it and move on. I'm not a programmer, I'm a jack-of-all-trades with too many projects and three kids, so "good enough and working" is the bar here. Use this at your own risk — I have not gone through it line by line, and it touches KVM firmware, so treat it accordingly. I'll say "I" throughout, but most of the actual coding was Claude (Anthropic's AI) working at my direction. I'll keep adding features as time allows.
