@@ -394,7 +394,10 @@ main_menu() {
         echo "  3) Build avsp-onboard companion bundle (local files only)"
         echo "  4) Re-run dependency check"
         echo "  0) Exit"
-        read -r -p "> " choice
+        if ! read -r -p "> " choice; then
+            echo "Input closed (EOF) -- exiting."
+            exit 0
+        fi
         case "$choice" in
             1) open_firmware ;;
             2) build_firmware_menu ;;
