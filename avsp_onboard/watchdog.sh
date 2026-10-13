@@ -63,7 +63,12 @@ apply_staged_update_if_ready() {
     chmod +x /tmp/avsp_client_ppc /tmp/kmem_patch
     /tmp/mtd_erase_write_ppc /dev/mtd1 900000 /tmp/update_staging/envelope.bin
     rm -f /tmp/update_ready /tmp/update_apply_confirmed
-    echo "[watchdog] update applied"
+    # /tmp is tmpfs (RAM). The staging dir (~5MB: envelope + payload.tar +
+    # extracted binaries) is no longer needed once applied -- a daemon restart
+    # doesn't clear tmpfs, only a full reboot does, so free it explicitly here
+    # to avoid several MB of RAM sitting used until the next reboot.
+    rm -rf /tmp/update_staging
+    echo "[watchdog] update applied (staging cleaned)"
 }
 
 ensure_file() {

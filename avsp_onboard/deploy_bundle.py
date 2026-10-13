@@ -58,6 +58,13 @@ BUNDLE_FILES = [
     # hand to write a freshly-staged bundle to flash itself -- used to be
     # absent from the default bundle.
     ("mtd_erase_write_ppc", "mtd_erase_write_ppc"),
+    # 2026-10-11: ship conshell in the bundle so the network root shell is
+    # already on the device after a single install -- extracted to
+    # /tmp/conshell_ppc by startup.sh's tar, but DEFAULT OFF: the daemon only
+    # launches it when /mnt/jffs/conshell_on exists (the Settings-page
+    # toggle). Being in the bundle just makes the binary available to enable;
+    # it does not start anything on its own.
+    ("conshell_ppc", "conshell_ppc"),
 ]
 
 
@@ -72,10 +79,21 @@ def build_envelope(outdir):
             print(f"  {m}", file=sys.stderr)
         sys.exit(1)
 
-    with tarfile.open(tar_path, "w") as tf:
+    # USTAR, not Python's default PAX: the device's busybox tar (v1.13.3) does
+    # not understand PAX 'x' extended headers and warns "skipping header 'x'"
+    # on every file (extraction still works, but it's noise -- seen live during
+    # a real install). USTAR emits no 'x' headers; our short arcnames and small
+    # sizes fit it fine. Normalize owner/mtime too so the tar is deterministic
+    # and carries no host-specific uids into the device.
+    def _norm(ti):
+        ti.uid = ti.gid = 0
+        ti.uname = ti.gname = ""
+        ti.mtime = 0
+        return ti
+    with tarfile.open(tar_path, "w", format=tarfile.USTAR_FORMAT) as tf:
         for src, arcname in BUNDLE_FILES:
             path = os.path.join(HERE, src)
-            tf.add(path, arcname=arcname)
+            tf.add(path, arcname=arcname, filter=_norm)
             print(f"  + {arcname} ({os.path.getsize(path)} bytes)")
 
     tar_bytes = open(tar_path, "rb").read()
@@ -145,8 +163,16 @@ def render_startup_sh(outdir, ip, target_port, ws_port, admin_user, offset_hex):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("ip", help="the DSR2030's admin IP")
-    ap.add_argument("target_port", type=int, help="numeric AVSP port of the default target to auto-connect to on boot (admin UI's target list)")
+    ap.add_argument("ip", nargs="?", default="127.0.0.1",
+                     help="how the ON-DEVICE daemon reaches its own main_app. Default "
+                          "127.0.0.1 -- the daemon runs on the appliance, so loopback works "
+                          "(verified: admin HTTPS, AVSP and ASMP all answer on 127.0.0.1) and "
+                          "makes the bundle DEVICE-AGNOSTIC (one bundle, any unit). You rarely "
+                          "need to set this.")
+    ap.add_argument("target_port", nargs="?", type=int, default=1,
+                     help="numeric AVSP port of the default target to auto-connect to on boot "
+                          "(default 1; if it's offline the daemon just starts its web UI and "
+                          "you pick a target in the browser)")
     ap.add_argument("--ws-port", type=int, default=8080)
     ap.add_argument("--admin-user", default="admin",
                      help="fallback AVSP-session username only -- NOT the appliance login. "
@@ -160,10 +186,14 @@ def main():
     ap.add_argument("--tftp-port", type=int, default=6969)
     args = ap.parse_args()
 
-    tftp_host = args.tftp_host or guess_local_ip(args.ip)
+    # The device fetches install.sh + the binaries from THIS PC's LAN IP -- a
+    # different thing from args.ip (which is now loopback by default). Probe
+    # toward a public address so we get the real outbound LAN IP, not 127.0.0.1.
+    probe = args.ip if args.ip not in ("127.0.0.1", "localhost", "::1") else "8.8.8.8"
+    tftp_host = args.tftp_host or guess_local_ip(probe)
     if not tftp_host:
-        print("ERROR: couldn't auto-detect this machine's IP toward "
-              f"{args.ip} -- pass --tftp-host explicitly.", file=sys.stderr)
+        print("ERROR: couldn't auto-detect this machine's LAN IP -- pass "
+              "--tftp-host explicitly.", file=sys.stderr)
         sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -171,21 +201,23 @@ def main():
     startup_path = render_startup_sh(args.outdir, args.ip, args.target_port,
                                       args.ws_port, args.admin_user, args.offset)
 
-    # Copy the two flash-tool binaries into outdir too, so install.sh's
-    # single TFTP root has everything it needs -- these otherwise only
-    # live alongside this script, in a different directory than the
-    # per-device outputs above.
-    for f in ("flash_bundle_read_ppc", "mtd_erase_write_ppc"):
+    # Copy the two flash-tool binaries AND the portable TFTP server into
+    # outdir too, so this one directory is a complete, self-contained serve-
+    # kit: everything install.sh needs to fetch, plus a stdlib-only server to
+    # serve it with (no pip/tftpy or system tftpd required).
+    for f in ("flash_bundle_read_ppc", "mtd_erase_write_ppc", "mini_tftpd.py"):
         shutil.copy(os.path.join(HERE, f), os.path.join(args.outdir, f))
 
     install_path = render_install_sh(args.outdir, tftp_host, args.tftp_port, args.offset)
 
     print("\n" + "=" * 72)
-    print(f"Bundle built in {args.outdir} -- serve that directory with a TFTP")
-    print(f"server on {tftp_host}:{args.tftp_port} (e.g. `python3 -m tftpy.TftpServer")
-    print(f"{args.tftp_port} {args.outdir}` or any standard tftpd), then from a root")
-    print("shell on the device (fired console workaround, or the SETUP port")
-    print("gateway), after the new firmware has booted:")
+    print(f"Bundle built in {args.outdir} -- a self-contained serve-kit (the")
+    print("portable stdlib-only TFTP server is copied in too). Serve it with:")
+    print(f"    python3 {os.path.join(args.outdir, 'mini_tftpd.py')} {args.outdir} {args.tftp_port}")
+    print(f"(or any standard tftpd on {tftp_host}:{args.tftp_port}). Then from a root")
+    print("shell on the device (modem console, or conshell) after the new")
+    print("firmware has booted -- and if you built with --get-avsp-bundle, just")
+    print("run `sh /usr/sbin/get_avsp_bundle` instead of the three lines below:")
     print("=" * 72)
     print(f"""
 cd /tmp

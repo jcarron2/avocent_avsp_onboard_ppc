@@ -5,3 +5,8 @@ avsp_onboard/deploy_out/
 *.fl
 *.fl.md5
 push_to_github.sh
+
+# Local timestamped backups and editor .bak files — not part of the release
+backup/
+*.bak
+*.bak-*

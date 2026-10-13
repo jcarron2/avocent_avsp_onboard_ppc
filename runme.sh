@@ -98,6 +98,7 @@ check_deps() {
 
     for f in avocent_fl_tool.py cramfs_tool.py patch_cipher_list.py build_kvm_firmware.py \
              features/modem_console.py features/avsp_onboard_hook.py features/java_certs.py \
+             features/enhanced_build.py features/get_avsp_bundle.py \
              avsp_onboard/deploy_bundle.py avsp_onboard/avsp_client_ppc \
              avsp_onboard/mini_tftpd.py avsp_onboard/install.sh.template; do
         if [ -e "$HERE/$f" ]; then
@@ -255,6 +256,37 @@ build_firmware_menu() {
     fi
     echo
 
+    echo "--- enhanced-build ---"
+    echo "Marks the admin login page as a custom 'Enhanced build <id>' so a"
+    echo "modified unit is obvious at a glance and never mistaken for stock."
+    echo "Rootfs HTML edit only -- does NOT touch the version-gated binary"
+    echo "version field, so it's safe and can say anything."
+    if confirm "Add the enhanced-build marker?"; then
+        args+=(--enhanced-build)
+        name_tags+=(enhanced)
+        local bid
+        read -r -p "  Build id to show after '-Enhanced build' (blank = auto): " bid
+        [ -n "$bid" ] && args+=(--build-id "$bid")
+    fi
+    echo
+
+    echo "--- get_avsp_bundle (on-device onboarding helper) ---"
+    echo "Bakes /usr/sbin/get_avsp_bundle + its .conf so the on-device"
+    echo "install is ONE command: 'sh /usr/sbin/get_avsp_bundle' TFTP-fetches"
+    echo "and runs install.sh for you. The TFTP server is baked in here (and"
+    echo "stays editable on-device at /mnt/jffs/get_avsp_bundle.conf), or it"
+    echo "prompts for it if you leave it blank."
+    if confirm "Add the get_avsp_bundle helper?"; then
+        args+=(--get-avsp-bundle)
+        name_tags+=(getavsp)
+        local gg_host gg_port
+        read -r -p "  TFTP server IP to bake in (blank = ask on-device): " gg_host
+        [ -n "$gg_host" ] && args+=(--tftp-host "$gg_host")
+        read -r -p "  TFTP port [6969]: " gg_port
+        [ -n "$gg_port" ] && args+=(--tftp-port "$gg_port")
+    fi
+    echo
+
     if [ "${#args[@]}" -eq 0 ]; then
         echo "No features selected -- nothing to build."
         pause
@@ -312,7 +344,11 @@ avsp_bundle_menu() {
     echo
 
     local ip target_port ws_port admin_user offset tftp_port outdir
-    read -r -p "Device IP: " ip
+    echo "The on-device daemon talks to its OWN main_app, so this is normally"
+    echo "127.0.0.1 (loopback works -- verified) and the SAME bundle then works"
+    echo "on any unit. Only change it if you know you need a specific IP."
+    read -r -p "Daemon->main_app IP [127.0.0.1]: " ip
+    ip="${ip:-127.0.0.1}"
     read -r -p "Default KVM target port to auto-connect to on boot [1] (see admin UI's target list): " target_port
     target_port="${target_port:-1}"
     read -r -p "WebSocket port [8080]: " ws_port

@@ -1,0 +1,554 @@
+
+
+      ___  ___ ___   ___  ___ ___  ___    _  ___   _____ ___ ___
+     |        \/ __| _ \ |_  )/ _ \__ \/ _ \  | |/ \ \ / / _ \ _ \_ _        |
+     |        |) \__ \   /  / /| | | |/ /| |_| | | ' < \ V /|   /   /|       |
+     |       ___/|___/_|_\ /___|\___/|_| \___/  |_|\_\ \_/ |_|_\_|_\___      |
+
+     A V O C E N T   D S R 2 0 3 0   M O D E R N I Z A T I O N   K I T
+
+     +=======================================================================+
+     |                                                                       |
+     |       B I N A R Y   R E L E A S E   -   U S E R ' S   G U I D E       |
+     |                                                                       |
+     |          "release-ppcbin"  ......  precompiled, no toolchain          |
+     |                                                                       |
+     +=======================================================================+
+
+                        Document Revision ....... 1.10
+                        Release Channel ......... BINARY (PPC prebuilt)
+                        Target Hardware ......... Avocent DSR2030 (X030)
+                        Compiler included ....... NO (prebuilt only)
+
+     -----------------------------------------------------------------------
+     This program is provided AS-IS, with NO WARRANTY of any kind. It writes
+     to the flash memory of KVM hardware and can brick it. Read the last
+     section (DISCLAIMER) before you do ANYTHING. You have been warned, and
+     you will be warned again.
+     -----------------------------------------------------------------------
+
+================================================================================
+  TABLE OF CONTENTS
+================================================================================
+
+    1.0   ................................... WHAT IS THIS THING?
+    2.0   ........................... WHICH RELEASE AM I HOLDING?
+    3.0   ..................................... WHAT'S IN THE BOX
+    4.0   ................................... SYSTEM REQUIREMENTS
+    5.0   ................. THEORY OF OPERATION  (READ THIS ONCE)
+    6.0   ............... ACCESS PATHS -- HOW YOU ACTUALLY GET IN
+    7.0   ............................... QUICK START  (THE TOUR)
+    8.0   ...................... RUNNING INSTALL.SH ON THE DEVICE
+    9.0   ............................ THE MENU, OPTION BY OPTION
+    10.0  .......... THE SETTINGS PAGE, SELF-UPDATE, AND CONSHELL
+    11.0  ................................. VERIFYING THE PACKAGE
+    12.0  ....................................... TROUBLESHOOTING
+    13.0  .............................................. GLOSSARY
+    14.0  ................................... DISCLAIMER & THANKS
+
+     (Tip: search this file for a section number, e.g. "6.0", to jump.)
+
+
+
+
+================================================================================
+  1.0   WHAT IS THIS THING?
+================================================================================
+
+  The Avocent DSR2030 is a PowerPC-based KVM-over-IP switch from the mid-
+  2000s. Its stock remote-control client is a Java Web Start app that no
+  modern browser or JRE will launch without a fight (NPAPI is gone; the
+  certs are expired; the ciphers are dead; the signatures are MD5).
+
+  This toolkit does NOT remove, disable, or replace that Java client. The
+  factory software stays exactly where it is and still works. What this
+  toolkit ADDS is a small native daemon -- AVSP_CLIENT_PPC -- that runs ON
+  the KVM itself and serves a plain, modern, HTML5 browser session. You
+  point any current web browser at the unit's IP and get a live,
+  controllable KVM view: no Java, no plugin, no per-machine config. Think
+  "an on-device web front end that sits alongside the old Java path," not
+  "a thing that rips the old path out."
+
+  WHAT HAD TO BE REVERSE-ENGINEERED. There was no documentation for any of
+  this; it came from disassembling only the parts actually needed:
+     - AVSP, the appliance's own video + control protocol: the plaintext
+       "APCP" session handshake that must happen BEFORE TLS, the TLS login +
+       session-ticket flow, the RIP/channel addressing, and the keyboard/
+       mouse packet formats (USB-HID on the wire).
+     - The video codec itself (DVC15) -- a pixel run-length scheme decoded
+       from scratch, so the browser paints frames with zero vendor code.
+     - The session bring-up sequence and target/adaptor enumeration (via the
+       appliance's own admin HTTP interface).
+
+  The KVM's 266 MHz PowerPC 405 cannot decode video in software, so the
+  daemon ships the stream out in its NATIVE form and the REMOTE browser
+  decodes it in JavaScript -- that is what got performance back to feeling
+  like the original client.
+
+  A FEW OF THE WALLS HIT ALONG THE WAY (the source has the gory detail):
+     - This kernel is old enough (2001-era) that it predates Linux's direct
+       socket syscalls -- socket()/connect() just return ENOSYS on real
+       hardware, so all networking goes through a socketcall(2) shim.
+     - The kernel's own video-read path crashes unless patched -- hence two
+       tiny live kernel-memory patches re-applied on every start.
+     - There is no /dev/ptmx, so a normal telnetd can't work; conshell was
+       written from scratch as a PTY-free root shell instead.
+     - Logging in with a stale session ticket hangs a shared login thread
+       and can take the whole unit's control ports down -- so the daemon
+       always mints a fresh ticket.
+     - One boot-region firmware experiment bricked a unit outright (recovered
+       via the TFTP path above) -- which is why this toolkit only ever
+       touches the rootfs, never the boot region.
+
+  It does all of this WITHOUT modifying the stock "main_app" or the KVM's
+  hardware drivers. The daemon lives in an unused slice of the flash chip and
+  co-exists with the factory software.
+
+
+
+================================================================================
+  2.0   WHICH RELEASE AM I HOLDING?
+================================================================================
+
+  There are two download channels. They share the same tooling and the same
+  workflow; the only real difference is whether you can recompile the
+  device binaries yourself.
+
+     SOURCE release ("release/")
+        Full C source for the daemon + a VENDORED PowerPC cross-compiler
+        and mbedTLS. You can rebuild everything. Bigger download.
+
+     BINARY release ("release-ppcbin/")
+        Precompiled PowerPC binaries only -- no source, no compiler.
+        Smaller download, identical features, just can't rebuild.
+
+  You are reading the BINARY (PPC prebuilt) manual. If you want the other one,
+  it lives in "release/".
+
+
+
+================================================================================
+  3.0   WHAT'S IN THE BOX
+================================================================================
+
+  FRONT END (both channels):
+     runme.sh ................. the menu-driven front end. START HERE.
+     build_kvm_firmware.py .... firmware customizer (features -> new .fl)
+     avocent_fl_tool.py ....... low-level .fl pack/unpack/verify engine
+     cramfs_tool.py ........... PPC-variant cramfs reader/writer
+     patch_cipher_list.py ..... TLS cipher fixup for the java-certs step
+     verify_ppcbin.sh ....... integrity check for this package
+
+  THE ON-DEVICE PAYLOAD (avsp_onboard/):
+     avsp_client_ppc .......... the companion daemon (~1 MB, PPC, static)
+     kmem_patch ............... live kernel-memory fixups (each boot)
+     flash_bundle_read ........ reads the bundle back out of flash
+     mtd_erase_write .......... writes the bundle to flash
+     mtd_erase_only ........... erase-only helper (uninstall path)
+     conshell_ppc ............. PTY-free network root shell (ships in the
+                                bundle, OFF until you enable it; see the
+                                Settings section)
+     deploy_bundle.py ......... builds the install bundle + install.sh
+     mini_tftpd.py ............ tiny stdlib TFTP server (no system tftpd!)
+     startup/watchdog/*.sh .... boot + supervisor logic
+
+
+  NOT INCLUDED (by design): any .c source, and any compiler/toolchain.
+  This is the binary channel. To rebuild avsp_client_ppc from source, use
+  the SOURCE release in "release/".
+
+
+  YOU MUST SUPPLY: the stock firmware image dsr_x030_3.7.2.8.fl (see the
+  next section for the exact MD5).
+
+
+
+================================================================================
+  4.0   SYSTEM REQUIREMENTS
+================================================================================
+
+  ON YOUR PC (where you run runme.sh):
+     - A Linux / UNIX-ish shell (bash).
+     - Python 3. Everything leans on it.
+     - openssl + a Java JDK 8+ (keytool/jarsigner/jar) ... ONLY if you use
+       the "java-certs" feature. Skip it and you don't need Java at all.
+       (The whole point of this kit is to stop needing Java, so most people
+       skip it.)
+     - Network reachability to the KVM on your LAN.
+
+
+  THE STOCK FIRMWARE FILE (you provide this):
+     - dsr_x030_3.7.2.8.fl
+     - MD5 must be:  E6A1739BE9941F441877057D231C5F9E
+     - The tool verifies this image's own internal checksums before
+       touching it, and refuses to proceed if it doesn't check out clean.
+
+  ON THE KVM (to install the daemon): a ROOT SHELL -- see the ACCESS PATHS
+  section. Serial console on the MODEM port is 9600 8-N-1 (confirmed live).
+
+
+
+================================================================================
+  5.0   THEORY OF OPERATION  (READ THIS ONCE)
+================================================================================
+
+  There are TWO separate operations here, and they are easy to confuse:
+
+     (A) MODIFY THE FIRMWARE IMAGE (.fl)
+         A purely OFFLINE edit on your PC. Takes the stock .fl, adds the
+         features you pick, writes a NEW .fl. You then flash that new .fl
+         to the KVM. Features:
+             --modem-console : root shell on the physical MODEM port
+             --avsp-onboard  : boot hook so the daemon auto-starts (daemon
+                               web UI is served on port 8080 by default)
+             --java-certs    : re-sign the old Java client so it still
+                               launches too (optional; needs a JDK)
+             --enhanced-build: mark the admin login page as a custom
+                               "Enhanced build <id>" so a modified unit is
+                               obvious at a glance (rootfs HTML edit; safe,
+                               never touches the version-gated field)
+             --get-avsp-bundle: bake /usr/sbin/get_avsp_bundle so the on-device
+                               install becomes ONE command (see Section 8.0)
+
+     (B) INSTALL THE COMPANION DAEMON ONTO THE DEVICE
+         A LIVE step against a booted KVM. The daemon binaries are pushed
+         to a reserved region of the flash chip (mtd1 @ 0x900000) via TFTP
+         + an on-device install.sh. SEPARATE from (A): the avsp-onboard
+         hook only LAUNCHES what step (B) INSTALLS.
+
+  Why two steps? The reserved flash region survives firmware updates.
+  Install the daemon once; future firmware reflashes don't wipe it, and
+  future daemon updates are just a file push -- no reflash.
+
+  ABOUT "REVERSIBLE" -- READ CAREFULLY:
+     The firmware EDIT (A) is a safe offline file operation and is fully
+     reversible... UNTIL YOU FLASH IT. The moment you flash any image --
+     yours OR stock -- that is a real flash write with the SAME risk
+     profile as (B). "Reversible" here means: if a modified image misbehaves
+     you recover by flashing your KNOWN-GOOD STOCK .fl back on. It does NOT
+     mean flashing is risk-free. So: keep your stock dsr_x030_3.7.2.8.fl,
+     and treat every flash write -- (A)'s result and (B) alike -- with
+     respect.
+
+
+
+================================================================================
+  6.0   ACCESS PATHS -- HOW YOU ACTUALLY GET IN
+================================================================================
+
+  To INSTALL the daemon (step B, see Section 5.0) you need a ROOT SHELL on
+  the KVM. On a stock, never-modified unit this is the one real hurdle, and
+  there is no way around it: the FIRST install always needs root. You get
+  there one of two ways:
+
+     PATH 1 -- TRUST THE TOOLING, FLASH, THEN USE THE MODEM SHELL  (easiest,
+               NO exploit, NO prior root needed)
+         a. Build a modified .fl with --modem-console (and --avsp-onboard)
+            using runme.sh option 2.
+         b. Flash it the NORMAL way -- the appliance's own admin firmware-
+            upgrade (web admin UI, or the ROM console's Flash Download).
+            This needs only ordinary ADMIN access to the KVM. No root
+            shell, no exploit, nothing from this toolkit touches the device
+            to do it.
+         c. After it reboots, the physical MODEM DB9 port is a root console
+            at 9600 8-N-1. Plug in a serial cable (or a serial-to-IP
+            gateway) and you are root. Now run install.sh (see
+            Section 8.0).
+
+     PATH 2 -- BRING YOUR OWN FIRST-TIME SHELL  (only if you won't flash)
+         A console method on the first serial port exists, but it is
+         deliberately kept OUT of this public toolkit -- partly to keep the
+         "fun police" at bay, partly because you don't need it: Path 1 gets
+         you root with nothing but the normal firmware-upgrade you already
+         have. If you already have your own way to a root shell on a stock
+         unit, use it and skip straight to install.sh. Otherwise, use Path 1.
+
+  AFTER THE FIRST INSTALL, you no longer need a console for anything:
+     - conshell (this project's "telnet"): a network root shell. It SHIPS
+       in the bundle so the binary is already on the device, but it is OFF
+       by default and only starts when you enable it from the Settings page
+       (see Section 10.0). Default port 2323. Plaintext, no auth -- a
+       lab-only convenience.
+     - the Settings page's self-update: push new daemon builds over the
+       network, no console (see Section 10.0).
+
+  So, bluntly: you must EITHER have your own way in (Path 2) OR trust this
+  tooling enough to flash its modified .fl (Path 1). There is no third way
+  onto a truly stock unit -- conshell and self-update are things you get
+  AFTER the first install, not before.
+
+  Terminology note for this project: when you read "telnet" here, it means
+  CONSHELL. Real busybox telnetd does NOT work on this firmware (no
+  /dev/ptmx, dies per-connection even once that's patched) -- conshell is
+  the from-scratch replacement.
+
+
+
+================================================================================
+  7.0   QUICK START  (THE TOUR)
+================================================================================
+
+  STEP 1 -- Put the stock firmware next to runme.sh:
+        Copy dsr_x030_3.7.2.8.fl into this folder (verify the MD5 above).
+
+  STEP 2 -- Run the menu:
+        $ ./runme.sh
+
+  STEP 3 -- Build modified firmware (menu OPTION 2):
+        Pick features (at minimum --modem-console and --avsp-onboard).
+        Out comes a new .fl. Flash it (see Section 6.0 Path 1). Reboot.
+
+  STEP 4 -- Build + serve the daemon bundle (menu OPTION 3):
+        Answer the prompts (device IP, target port). runme.sh assembles the
+        bundle and install.sh, then offers to start its own TFTP server
+        (mini_tftpd.py) on port 6969. Say YES. Leave it running.
+
+  STEP 5 -- Get a root shell on the KVM and run install.sh.
+        This is its own section -- see Section 8.0.
+
+  STEP 6 -- Point a browser at the KVM:
+        http://<KVM-ip>:8080/
+        You should get the native video viewer, connected and streaming.
+
+
+
+================================================================================
+  8.0   RUNNING INSTALL.SH ON THE DEVICE
+================================================================================
+
+  install.sh is the on-device half of step (B). runme.sh OPTION 3 generates
+  it for you with your TFTP host/port and the flash offset already baked in,
+  and drops it (plus everything it fetches) into one directory it can serve
+  over TFTP.
+
+  SHORTCUT -- if you built the firmware with --get-avsp-bundle, you don't need
+  the three manual commands below. From the root shell just run:
+
+        sh /usr/sbin/get_avsp_bundle
+
+  It reads the baked-in TFTP server (/etc/get_avsp_bundle.conf, editable
+  on-device at /mnt/jffs/get_avsp_bundle.conf) or asks for it, then fetches
+  and runs install.sh. The rest of this section is the manual equivalent.
+
+  PREREQUISITES:
+     1. A ROOT SHELL on the KVM (MODEM serial port, or conshell if a daemon
+        is already installed). See Section 6.0.
+     2. A TFTP SERVER on your PC serving runme.sh option 3's output
+        directory. Option 3 offers to start one for you (mini_tftpd.py, port
+        6969). Say yes and leave it running. (install.sh needs TFTP
+        specifically -- "python3 -m http.server" will NOT work.)
+
+  THEN, from the root shell ON THE KVM, type:
+
+        cd /tmp
+        tftp -g -r install.sh -l install.sh <your-pc-ip> 6969
+        sh install.sh
+
+  WHAT install.sh DOES, in order:
+     - Refuses if a daemon is ALREADY running (prints the exact
+       "kill -9 <pid>" to run first -- it never stacks two daemons).
+     - Fetches flash_bundle_read -> /mnt/jffs   (persists across reboots)
+     - Fetches mtd_erase_write  -> /tmp
+     - Fetches startup.sh       -> /mnt/jffs   (persists across reboots)
+     - Fetches the bundle envelope and WRITES IT TO FLASH (mtd1, the
+       reserved region). ** This is the flash-write step. **
+     - Starts the daemon immediately -- no reboot needed to test.
+
+  From here on it is automatic on every boot:
+        /etc/auto_run -> startup.sh -> watchdog.sh -> avsp_client_ppc
+  The watchdog relaunches the daemon if it ever exits.
+
+  VERIFY, from your PC:
+        http://<KVM-ip>:8080/
+  Then press Ctrl+C on your PC to stop the TFTP server -- it's only needed
+  during the install.
+
+  TO UNDO (remove just the daemon from flash, leave firmware alone):
+        run avsp_onboard/uninstall.sh's steps from a device root shell.
+
+
+
+================================================================================
+  9.0   THE MENU, OPTION BY OPTION
+================================================================================
+
+  Running ./runme.sh gives you:
+
+     1) Open firmware file
+          Point the tool at your stock dsr_x030_3.7.2.8.fl. It verifies the
+          image before anything else happens.
+
+     2) Build modified firmware (features -> new .fl)
+          The offline firmware edit (Section 5.0 step A). Choose features,
+          get a new .fl. Does not touch any device.
+
+     3) Build avsp-onboard companion bundle (local files only)
+          Assembles the daemon bundle + install.sh with your device IP/port
+          baked in, and offers to serve it over TFTP (port 6969). Front half
+          of Section 5.0 step B; the on-device install.sh run (Section 8.0)
+          is the back half.
+
+     4) Re-run dependency check
+          Re-checks Python/openssl/JDK availability.
+
+
+     0) Exit
+
+
+  NOTE: there is deliberately no "rebuild from source" option in the binary
+  release. If you need one, use the source release.
+
+
+
+
+================================================================================
+  10.0   THE SETTINGS PAGE, SELF-UPDATE, AND CONSHELL
+================================================================================
+
+  Once the daemon is running, its web UI has a Settings page (the "settings"
+  link, served at GET /update). It operates on the ALREADY-RUNNING daemon --
+  it is not a first-install path. From there:
+
+     - SELF-UPDATE OVER TFTP. Give it a TFTP host + filename (a new
+       avsp_client_ppc build you made with runme.sh). It fetches the file,
+       checks it is a valid PowerPC ELF, runs it with --selftest, and STAGES
+       it to /tmp -- it NEVER touches the running daemon until you click
+       Apply. Staging and applying are two separate gates on purpose, so a
+       staged build can sit inert safely. The apply step is what writes the
+       new build to flash. (Access to update can be limited by a CIDR
+       allowlist in /mnt/jffs/update_allow.txt.)
+     - CONSHELL TOGGLE. conshell ships in the bundle but is OFF by default.
+       Enable it here to get a network root shell (default port 2323,
+       plaintext, one session at a time). Disable to stop it. This only
+       flips a marker -- it does not install anything.
+     - SAVED KVM LOGIN CREDENTIALS, so the daemon can mint its own session
+       tickets.
+     - NTP SYNC. The appliance has no RTC and boots thinking it's 1970;
+       NTP fixes the clock.
+     - DIAG LOGGING and an auto-connect-on-startup toggle.
+
+  What the Settings page does NOT do: install arbitrary extra files. It
+  updates the daemon (and its kernel-patch helper). conshell is already in
+  the bundle; everything else is a toggle, not an installer.
+
+
+
+================================================================================
+  11.0   VERIFYING THE PACKAGE
+================================================================================
+
+  Before trusting these files, run:
+
+        $ ./verify_ppcbin.sh
+
+  It confirms the package's inventory is present and internally consistent
+
+  (the precompiled PowerPC binaries are present and are real PPC ELF
+  objects).
+
+  The firmware tool (option 2) ALSO verifies independently: it checksums the
+  stock .fl before editing and re-checksums its own output afterward, using
+  the same additive byte-sum the device's own ROM checks at boot.
+
+
+
+================================================================================
+  12.0   TROUBLESHOOTING
+================================================================================
+
+  Q: runme.sh refuses my firmware file.
+  A: Wrong/garbled image. Must be stock dsr_x030_3.7.2.8.fl, MD5
+     E6A1739BE9941F441877057D231C5F9E. The verifier is doing its job.
+
+  Q: The browser page at :8080 never loads.
+  A: Did install.sh actually run on the device and report success? Is the
+     daemon running? Is the avsp-onboard hook in the firmware you flashed?
+     And confirm you flashed the MODIFIED .fl, not the stock one.
+
+  Q: install.sh says a daemon is already running.
+  A: By design. It prints the exact "kill -9 <pid>". Run that, re-run
+     install.sh. It never stacks two daemons.
+
+  Q: A binary "crashed" with SIGILL but things seem fine.
+  A: Known & harmless -- SIGILL on CLEAN exit from this toolchain. Not a
+     real crash. It WILL fool "set -e" scripts; check output strings.
+
+  Q: The remote mouse and my local mouse drift apart.
+  A: This is spelled out in the device's own PDF manual: for 1:1 mouse
+     tracking you MUST disable mouse acceleration on the target. In Windows
+     that means turning OFF "Enhance pointer precision" (pointer
+     acceleration), for every user account you'll connect as. It's the
+     classic KVM two-cursor problem -- a target-OS setting, not a bug in
+     this toolkit. Use absolute pointing where the target supports it.
+
+  Q: I enabled conshell and can't reach it.
+  A: Default port 2323, must be toggled on in Settings (off by default), one
+     session at a time.
+
+
+  Q: I think I bricked it.
+  A: This device family has a ROM-level TFTP network-recovery path (TFTP
+     only -- confirmed from Avocent's own manual), and it uses a FIXED
+     static-IP scheme. On a failed boot the unit assigns ITSELF 10.0.0.2 and
+     repeatedly requests the file "DSRxx30.fl" from a TFTP server at
+     10.0.0.3, port 69 -- automatically, no keypress needed (about every
+     20-25 seconds). TO RECOVER:
+         1. Put a TFTP server on a machine at 10.0.0.3 (a 10.0.0.3/8
+            address on the same wire as the KVM).
+         2. Drop your KNOWN-GOOD stock dsr_x030_3.7.2.8.fl there, RENAMED
+            to exactly DSRxx30.fl.
+         3. Wait. The unit pulls it on its next retry and reflashes clean.
+     This is exactly how a bricked unit was brought back during development.
+     Keep that stock image somewhere safe -- it is your recovery disk.
+
+
+
+================================================================================
+  13.0   GLOSSARY
+================================================================================
+
+  .fl ............ the Avocent firmware container (boot region + cramfs
+                   rootfs + kernel + checksums).
+  AVSP ........... the appliance's native video+control protocol, reverse-
+                   engineered so the daemon can talk to main_app locally.
+  avsp_client_ppc  the companion daemon that runs ON the KVM. It logs in to
+                   the appliance's own AVSP service locally, pulls the live
+                   video + control stream, and serves it to a browser over
+                   HTTP + WebSocket (the browser decodes the video). It also
+                   hosts the settings / self-update page and the conshell
+                   toggle. ~1 MB static PowerPC binary.
+  conshell ....... PTY-free TCP root shell; this project's "telnet". Port
+                   2323, opt-in, no security.
+  cramfs ......... the compressed read-only filesystem the rootfs uses (a
+                   32-bit PPC-endian variant here).
+  kmem_patch ..... two small live kernel-memory fixes re-applied each boot
+                   so the video-read path doesn't crash. Build-specific.
+  main_app ....... the factory KVM application. We never modify it.
+  MODEM port ..... the physical DB9 that --modem-console turns into a 9600
+                   8-N-1 root console.
+  reserved flash . the unused flash slice (mtd1 @ 0x900000) where the daemon
+                   bundle lives so it survives reboots and firmware updates.
+
+
+
+
+================================================================================
+  14.0   DISCLAIMER & THANKS
+================================================================================
+
+  This is a hobby reverse-engineering project for old KVM hardware. It
+  touches firmware and writes to flash. It can brick your device. There is
+  NO WARRANTY of any kind, express or implied. You run it entirely at your
+  own risk.
+
+  Much of the code was written with heavy AI assistance, at the author's
+  direction, and has not been audited line by line. If AI-assisted code
+  bothers you, your options are: use it as-is, help improve it, or delete it
+  and move on.
+
+
+  If it helps you breathe some life back into an old DSR2030 -- wonderful.
+  That's the whole point. Have fun, and keep your stock firmware image
+  handy.
+
+                      -- end of BINARY (PPC prebuilt) manual --
