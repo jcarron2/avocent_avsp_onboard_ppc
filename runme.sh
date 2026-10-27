@@ -100,7 +100,7 @@ check_deps() {
              features/modem_console.py features/avsp_onboard_hook.py features/java_certs.py \
              features/enhanced_build.py features/get_avsp_bundle.py \
              avsp_onboard/deploy_bundle.py avsp_onboard/avsp_client_ppc \
-             avsp_onboard/mini_tftpd.py avsp_onboard/install.sh.template; do
+             avsp_onboard/mini_tftpd.py avsp_onboard/mini_dhcpd.py avsp_onboard/install.sh.template; do
         if [ -e "$HERE/$f" ]; then
             echo "  [OK]   $f"
         else
@@ -404,16 +404,49 @@ avsp_bundle_menu() {
     fi
 
     echo
-    if confirm "Start a TFTP server now, serving $outdir on port $tftp_port?"; then
+    if confirm "Start the TFTP server now, serving $outdir on port $tftp_port?"; then
+        # Optional DHCP for a virgin unit on a laptop/field LAN with no DHCP of
+        # its own. TFTP uses an unprivileged port (no sudo); DHCP needs :67
+        # (sudo), so TFTP runs in the background and DHCP in the foreground --
+        # the one you watch for OFFER/ACK and Ctrl-C to stop everything.
+        local dhcp_args=() dh_ip dh_range dh_mask dh_iface pfx
+        if confirm "  Also run a DHCP server (virgin unit / field LAN with no DHCP)?"; then
+            read -r -p "    This laptop's static IP on the field LAN: " dh_ip
+            if [ -n "$dh_ip" ]; then
+                pfx="${dh_ip%.*}"
+                read -r -p "    Address pool to hand out [$pfx.100-$pfx.120]: " dh_range
+                dh_range="${dh_range:-$pfx.100-$pfx.120}"
+                read -r -p "    Subnet mask [255.255.255.0]: " dh_mask
+                dh_mask="${dh_mask:-255.255.255.0}"
+                read -r -p "    Bind to interface (blank = all NICs, e.g. eth0): " dh_iface
+                dhcp_args=(--server-ip "$dh_ip" --range "$dh_range" --netmask "$dh_mask" --tftp "$dh_ip")
+                [ -n "$dh_iface" ] && dhcp_args+=(--iface "$dh_iface")
+            else
+                echo "    No IP given -- skipping DHCP."
+            fi
+        fi
         echo
-        echo "Serving -- on the device's root shell, run:"
+        echo "Onboarding a unit that already has an IP? On its root shell:"
         echo "  cd /tmp"
-        echo "  tftp -g -r install.sh -l install.sh <your-pc-ip> $tftp_port"
+        echo "  tftp -g -r install.sh -l install.sh <this-laptop-ip> $tftp_port"
         echo "  sh install.sh"
+        echo "(a unit built with get_avsp_bundle just runs: sh /usr/sbin/get_avsp_bundle)"
         echo
-        echo "Ctrl+C here once install.sh finishes on the device."
-        echo
-        python3 "$HERE/avsp_onboard/mini_tftpd.py" "$outdir" "$tftp_port"
+        # TFTP in the background (unprivileged port -- no sudo needed)
+        python3 "$HERE/avsp_onboard/mini_tftpd.py" "$outdir" "$tftp_port" &
+        local tftpd_pid=$!
+        echo "TFTP server running in background (pid $tftpd_pid), serving $outdir."
+        if [ "${#dhcp_args[@]}" -gt 0 ]; then
+            echo "Starting DHCP in the foreground (needs sudo). Watch for OFFER/ACK;"
+            echo "Ctrl-C stops DHCP, then the TFTP server is stopped too."
+            echo
+            sudo python3 "$HERE/avsp_onboard/mini_dhcpd.py" "${dhcp_args[@]}" || true
+        else
+            echo "Ctrl+C here once install.sh has finished on the device."
+            wait "$tftpd_pid" 2>/dev/null || true
+        fi
+        kill "$tftpd_pid" 2>/dev/null || true
+        echo "Stopped TFTP server."
     fi
     pause
 }

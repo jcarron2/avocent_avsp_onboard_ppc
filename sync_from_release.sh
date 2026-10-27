@@ -43,6 +43,7 @@ ONBOARD_FILES=(
     startup.sh.template
     install.sh.template
     mini_tftpd.py
+    mini_dhcpd.py
     watchdog.sh
     ensure_patched.sh
 )
